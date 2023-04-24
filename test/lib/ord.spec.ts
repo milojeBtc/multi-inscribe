@@ -76,7 +76,7 @@ describe('ord', () => {
             'Rescribe From efce76f7261f82ec83a0aef3822f8a6938cf25b7e4de62d9b4eff5023a7b54a8i0',
             'utf-8'
           ),
-          destination: 'tb1p8lh4np5824u48ppawq3numsm7rss0de4kkxry0z70dcfwwwn2fcspyyhc7', // if reinscribe will ignore
+          destination: 'tb1p8lh4np5824u48ppawq3numsm7rss0de4kkxry0z70dcfwwwn2fcspyyhc7',
         },
       ],
       revealOutValue: 999,
@@ -110,7 +110,7 @@ describe('ord', () => {
     const inscribeCtx = {
       contentType: 'text/plain;charset=utf-8',
       body: Buffer.from('Inscribe Test Test', 'utf-8'),
-      destination: 'tb1p8lh4np5824u48ppawq3numsm7rss0de4kkxry0z70dcfwwwn2fcspyyhc7', // if reinscribe will ignore
+      destination: 'tb1p8lh4np5824u48ppawq3numsm7rss0de4kkxry0z70dcfwwwn2fcspyyhc7',
     }
     const request: InscriptionRequest = {
       existsInscriptionUtxoList: [

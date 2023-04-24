@@ -8,7 +8,7 @@ import { bitcoin, regtest, testnet } from 'bitcoinjs-lib/src/networks'
 // @ts-ignore
 // noinspection ES6PreferShortImport
 import { makeBitcoinAPI } from '@mempool/mempool.js/lib/services/api/index'
-import { AxiosInstance } from 'axios'
+import { AxiosInstance, AxiosResponse } from 'axios'
 import { useTransactions } from '@mempool/mempool.js/lib/app/bitcoin/transactions'
 
 initEccLib(ecc)
@@ -66,6 +66,8 @@ export class InscriptionTool {
   private static signatureSize = 64 // taproot
   private static validator = (pubkey: Buffer, msghash: Buffer, signature: Buffer): boolean =>
     ECPair.fromPublicKey(pubkey).verify(msghash, signature)
+  private static schnorrValidator = (pubkey: Buffer, msghash: Buffer, signature: Buffer): boolean =>
+    ecc.verifySchnorr(msghash, pubkey, signature)
   private net: Network = regtest
   private client: BlockchainClient = {} as any
   private existsInscriptionUtxoList: Utxo[] = []
@@ -424,7 +426,11 @@ export class InscriptionTool {
     for (let i = 0; i < psbt.txInputs.length; i++) {
       if (this.existsInscriptionUtxoECPairList.length) {
         if (i < this.existsInscriptionUtxoECPairList.length) {
-          if (!psbt.validateSignaturesOfInput(i, InscriptionTool.validator)) {
+          if (
+            psbt.data.inputs[i].finalScriptSig == undefined &&
+            psbt.data.inputs[i].finalScriptWitness == undefined &&
+            !psbt.validateSignaturesOfInput(i, InscriptionTool.validator)
+          ) {
             throw new Error(`invalid signature ${i}`)
           }
         }
@@ -439,7 +445,14 @@ export class InscriptionTool {
     for (let i = 0; i < psbt.txInputs.length; i++) {
       if (this.existsInscriptionUtxoList.length) {
         if (i < this.existsInscriptionUtxoList.length) {
+          if (
+            psbt.data.inputs[i].finalScriptSig !== undefined ||
+            psbt.data.inputs[i].finalScriptWitness !== undefined
+          ) {
+            continue
+          }
           if (psbt.validateSignaturesOfInput(i, InscriptionTool.validator)) {
+            psbt.finalizeInput(i)
             continue
           }
           if (this.existsInscriptionUtxoECPairList[i]) {
@@ -472,8 +485,9 @@ export class InscriptionTool {
           [Transaction.SIGHASH_DEFAULT]
         )
       }
+      psbt.finalizeInput(i)
     }
-    this.commitTx = psbt.finalizeAllInputs().extractTransaction(true)
+    this.commitTx = psbt.extractTransaction(true)
   }
 
   private completeAndSignRevealTx() {
@@ -507,9 +521,7 @@ export class InscriptionTool {
       for (let j = 0; j < _revealPsbt[i].txOutputs.length; j++) {
         const commitTxOutputIndex = _revealPsbt.length == 1 ? j : i
         revealPsbt[i].addOutput({
-          script: withCommitTxOutputForFee
-            ? commitTx.outs[commitTxOutputIndex].script
-            : _revealPsbt[i].txOutputs[j].script,
+          script: _revealPsbt[i].txOutputs[j].script,
           value: withCommitTxOutputForFee ? commitTx.outs[commitTxOutputIndex].value : this.revealOutValue,
         })
       }
@@ -537,7 +549,7 @@ export class InscriptionTool {
           throw new Error('insufficient balance for reveal tx')
         }
         if (addChangeOutput) {
-          revealPsbt[i].addOutput({ script: commitTx.outs[0].script, value: changeAmount })
+          revealPsbt[i].addOutput({ script: commitTx.outs[commitTx.outs.length - 1].script, value: changeAmount })
         }
       }
     }
@@ -589,9 +601,27 @@ export class InscriptionTool {
     return this.revealTxList.map((tx) => tx.toHex())
   }
 
-  private async broadcastTx(tx: Transaction) {
-    const { data } = await this.client.btcApiClient.post<string>('/tx', tx.toHex())
-    return data
+  private async broadcastTx(tx: Transaction, maxRetries = 3) {
+    let retries = 0
+    let response: AxiosResponse<string> | undefined
+    while (retries < maxRetries) {
+      try {
+        response = await this.client.btcApiClient.post<string>('/tx', tx.toHex())
+        return response.data
+      } catch (e: any) {
+        if (response !== undefined) {
+          console.error(
+            `broadcastTx error: ${retries} ${tx.getId()} ${response.status} ${response.statusText} ${
+              response.data
+            }, ${e} hex: ${tx.toHex()} `
+          )
+        }
+        retries++
+        if (retries === maxRetries) {
+          throw e
+        }
+      }
+    }
   }
 
   public async inscribe(): Promise<InscribeResult> {
@@ -600,7 +630,7 @@ export class InscriptionTool {
     const inscriptions = new Array<string>(this.txCtxDataList.length)
     for (let i = 0; i < this.revealTxList.length; i++) {
       const revealTxHash = await this.broadcastTx(this.revealTxList[i])
-      revealTxHashList[i] = revealTxHash
+      revealTxHashList[i] = revealTxHash || ''
       if (this.revealTxList.length == this.txCtxDataList.length) {
         inscriptions[i] = `${revealTxHash}i0`
       } else {
@@ -613,7 +643,7 @@ export class InscriptionTool {
       }
     }
     return {
-      commitTxHash,
+      commitTxHash: commitTxHash || '',
       revealTxHashList,
       inscriptions,
     }
