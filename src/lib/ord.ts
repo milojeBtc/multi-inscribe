@@ -77,7 +77,7 @@ export class InscriptionTool {
   private revealOutValue: number = InscriptionTool.defaultRevealOutValue
   private revealFeeRate: number = 1
   private txCtxDataList: InscriptionTxCtxData[] = []
-  private revealPsbtList: Psbt[] = []
+  public revealPsbtList: Psbt[] = []
   private revealTxList: Transaction[] = []
   private commitTx?: Transaction
   private commitPsbt?: Psbt
@@ -629,6 +629,7 @@ export class InscriptionTool {
     const revealTxHashList = new Array<string>(this.revealTxList.length)
     const inscriptions = new Array<string>(this.txCtxDataList.length)
     for (let i = 0; i < this.revealTxList.length; i++) {
+      console.log(this.revealTxList[i].toHex())
       const revealTxHash = await this.broadcastTx(this.revealTxList[i])
       revealTxHashList[i] = revealTxHash || ''
       if (this.revealTxList.length == this.txCtxDataList.length) {
